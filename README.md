@@ -52,6 +52,12 @@ scribe transcribe --input podcast.mp3 --out-dir ~/transcripts
 - [`docs/03-related-tools.md`](./docs/03-related-tools.md) — how Scribe fits
   with other raibid-labs projects (Scryforge, voice-stuff, Phage, gudpkm
   n8n)
+- [`docs/04-cli-reference.md`](./docs/04-cli-reference.md) — subcommands,
+  flags, env vars, exit codes, output layout
+- [`docs/05-contributing.md`](./docs/05-contributing.md) — dev environment
+  setup, code style, PR conventions, how to extend inputs and outputs
+- [`docs/06-troubleshooting.md`](./docs/06-troubleshooting.md) — common
+  failure modes and fixes
 
 ## Related raibid-labs projects
 
