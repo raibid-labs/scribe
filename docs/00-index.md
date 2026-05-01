@@ -13,6 +13,14 @@ This directory holds Scribe's design and reference docs.
 - [`03-related-tools.md`](./03-related-tools.md) — how Scribe fits with
   Scryforge, voice-stuff, the gudpkm n8n flow, the future Murmur dictation
   utility, and Phage
+- [`04-cli-reference.md`](./04-cli-reference.md) — every subcommand and
+  flag, env vars, exit codes, output layout
+- [`05-contributing.md`](./05-contributing.md) — dev environment setup
+  (rustup, just, ffmpeg, whisper.cpp, models), code style, PR
+  conventions, how to extend inputs and outputs
+- [`06-troubleshooting.md`](./06-troubleshooting.md) — common failure
+  modes (missing ffmpeg / whisper-cli / model, CUDA absence, whisper
+  hallucinations on silence)
 
 ## Pointers
 
