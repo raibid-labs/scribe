@@ -241,4 +241,143 @@ mod tests {
         let contents = std::fs::read_to_string(&path).unwrap();
         assert_eq!(contents, format!("---\nhdr\n---\n\n{body}"));
     }
+
+    // --- Slug edge-case gap-fillers (issue #7) ---
+
+    /// All-punctuation input collapses to the empty-state fallback. Same as
+    /// `slugify_empty_becomes_untitled` but with characters more typical of
+    /// real-world filenames (parens, brackets, etc.).
+    #[test]
+    fn slugify_all_punctuation_becomes_untitled() {
+        assert_eq!(slugify("()[]{}.,;:!?"), "untitled");
+        assert_eq!(slugify("___---___"), "untitled");
+    }
+
+    /// Long stems are passed through length-unbounded — no silent truncation
+    /// that would create surprising filename collisions for callers who
+    /// specifically picked a long descriptive name. The pipeline does not
+    /// own filename-length policy; the filesystem can complain if it must.
+    #[test]
+    fn slugify_does_not_truncate_long_input() {
+        let long_stem = "a".repeat(300);
+        let got = slugify(&long_stem);
+        assert_eq!(got.len(), 300, "slugify should not truncate");
+        assert!(got.chars().all(|c| c == 'a'));
+    }
+
+    /// Mixed unicode and ASCII: only the ASCII alphanumerics survive,
+    /// everything else (CJK, accents, emoji) collapses to the dash run.
+    /// This guards against accidental "permissive" changes that would let
+    /// non-URL-safe characters into filenames.
+    #[test]
+    fn slugify_keeps_only_ascii_alphanumerics() {
+        assert_eq!(slugify("hello 世界 world"), "hello-world");
+        assert_eq!(
+            slugify("episode-7-rocket🚀launch"),
+            "episode-7-rocket-launch"
+        );
+    }
+
+    /// A stem that includes literal dots (e.g. version numbers in the name)
+    /// should not be split on the dots — slugify operates on the *stem*,
+    /// not on extensions. Dots collapse to dashes like any other non-alnum.
+    #[test]
+    fn slugify_collapses_dots_in_stem() {
+        assert_eq!(slugify("v1.2.3-release-notes"), "v1-2-3-release-notes");
+    }
+
+    // --- Frontmatter edge-case gap-fillers (issue #7) ---
+
+    /// Source paths with spaces are written verbatim into the frontmatter —
+    /// no quoting, no escaping. YAML accepts unquoted scalars containing
+    /// spaces, and tools that consume the file (Obsidian, scryforge) read
+    /// the whole rest-of-line.
+    #[test]
+    fn frontmatter_handles_source_with_spaces() {
+        let t = Utc.with_ymd_and_hms(2026, 4, 28, 14, 30, 0).unwrap();
+        let meta = FrontmatterMeta {
+            source: Path::new("/abs/path with spaces/episode 42.mp3"),
+            title: "episode 42",
+            created: t,
+            duration_sec: 12.0,
+            model: "base.en",
+            sidecar_filename: "episode-42-20260428-143000.json",
+        };
+        let got = render_frontmatter(&meta);
+        assert!(got.contains("source: /abs/path with spaces/episode 42.mp3\n"));
+        assert!(got.contains("title: episode 42\n"));
+    }
+
+    /// A title containing a colon is currently written verbatim. YAML would
+    /// technically prefer the value to be quoted, but the verbatim contract
+    /// says we don't mangle. This test pins down the current behavior so a
+    /// future "let's escape colons" change has to make a deliberate decision
+    /// (and update this test).
+    #[test]
+    fn frontmatter_writes_title_with_colon_verbatim() {
+        let t = Utc.with_ymd_and_hms(2026, 4, 28, 14, 30, 0).unwrap();
+        let meta = FrontmatterMeta {
+            source: Path::new("/x.mp3"),
+            title: "Episode 7: The One With Colons",
+            created: t,
+            duration_sec: 1.0,
+            model: "base.en",
+            sidecar_filename: "x.json",
+        };
+        let got = render_frontmatter(&meta);
+        assert!(
+            got.contains("title: Episode 7: The One With Colons\n"),
+            "title not preserved verbatim: {got}"
+        );
+    }
+
+    /// `created` must be ISO-8601 UTC with the trailing `Z`, second
+    /// precision (no fractional seconds). This is what downstream
+    /// consumers parse against; sub-second drift would silently break
+    /// tools that pin the format.
+    #[test]
+    fn frontmatter_created_is_iso8601_utc_seconds_precision() {
+        // A non-round-second instant — if we ever started emitting
+        // sub-second precision, the `:42` field would carry trailing
+        // digits and this test would catch it.
+        let t = Utc.with_ymd_and_hms(2026, 4, 28, 14, 30, 42).unwrap();
+        let meta = FrontmatterMeta {
+            source: Path::new("/x.mp3"),
+            title: "x",
+            created: t,
+            duration_sec: 0.0,
+            model: "base.en",
+            sidecar_filename: "x.json",
+        };
+        let got = render_frontmatter(&meta);
+        assert!(
+            got.contains("created: 2026-04-28T14:30:42Z\n"),
+            "created field not in ISO-8601 UTC seconds form: {got}"
+        );
+        // No fractional seconds.
+        assert!(!got.contains("created: 2026-04-28T14:30:42."));
+    }
+
+    /// Closing-marker convention: the frontmatter block ends with `---\n\n`
+    /// so the body starts on a fresh paragraph. If this ever drifts to
+    /// `---\n` (no blank line) the body assertions in the integration
+    /// test would still pass but downstream markdown renderers might
+    /// glue the body to the closing fence.
+    #[test]
+    fn frontmatter_ends_with_blank_line() {
+        let t = Utc.with_ymd_and_hms(2026, 4, 28, 14, 30, 0).unwrap();
+        let meta = FrontmatterMeta {
+            source: Path::new("/x.mp3"),
+            title: "x",
+            created: t,
+            duration_sec: 0.0,
+            model: "base.en",
+            sidecar_filename: "x.json",
+        };
+        let got = render_frontmatter(&meta);
+        assert!(
+            got.ends_with("---\n\n"),
+            "frontmatter must end with `---\\n\\n`: {got:?}"
+        );
+    }
 }

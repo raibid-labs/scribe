@@ -380,4 +380,82 @@ mod tests {
     fn doctor_resolve_whisper_bin_is_reachable() {
         let _ = crate::doctor::resolve_whisper_bin();
     }
+
+    /// A whitespace-only `--model` flag must NOT be treated as a real
+    /// model name (`"   "`); it falls through to the next precedence
+    /// level. Pins down the `n.trim().is_empty()` branch in
+    /// `Config::resolve` — the friendly UX where users can pass `--model
+    /// ""` (or have a shell expansion produce blank) and still get the
+    /// env-var or default behavior.
+    #[test]
+    fn resolve_treats_whitespace_only_model_flag_as_unset() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let model_dir = tempfile::tempdir().unwrap();
+        std::fs::write(model_dir.path().join("ggml-from-env.bin"), b"x").unwrap();
+
+        let input = tempfile::NamedTempFile::new().unwrap();
+        let whisper_dir = tempfile::tempdir().unwrap();
+        let whisper_bin = fake_whisper_bin(whisper_dir.path());
+        let out_dir = tempfile::tempdir().unwrap();
+
+        let cfg = with_env(ENV_MODEL, Some("from-env"), || {
+            with_env(
+                ENV_MODEL_PATH,
+                Some(model_dir.path().to_str().unwrap()),
+                || {
+                    with_env(ENV_WHISPER_BIN, Some(whisper_bin.to_str().unwrap()), || {
+                        Config::resolve(CliInputs {
+                            input: input.path().to_path_buf(),
+                            out_dir: out_dir.path().to_path_buf(),
+                            model: Some("   ".to_string()),
+                            keep_temp: false,
+                        })
+                    })
+                },
+            )
+        })
+        .expect("config should resolve, falling through whitespace flag to env");
+
+        assert_eq!(
+            cfg.model_name, "from-env",
+            "whitespace-only --model should not shadow $SCRIBE_MODEL"
+        );
+    }
+
+    /// `--keep-temp` is plumbed through unchanged. Trivial but worth
+    /// pinning; the resolver could theoretically grow conditional logic
+    /// around it (e.g., always-keep when `RUST_LOG=debug`) and we want
+    /// the default behavior fixed.
+    #[test]
+    fn resolve_passes_keep_temp_through() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let model_dir = tempfile::tempdir().unwrap();
+        let bin_name = format!("ggml-{DEFAULT_MODEL_NAME}.bin");
+        std::fs::write(model_dir.path().join(&bin_name), b"x").unwrap();
+
+        let input = tempfile::NamedTempFile::new().unwrap();
+        let whisper_dir = tempfile::tempdir().unwrap();
+        let whisper_bin = fake_whisper_bin(whisper_dir.path());
+        let out_dir = tempfile::tempdir().unwrap();
+
+        let cfg = with_env(ENV_MODEL, None, || {
+            with_env(
+                ENV_MODEL_PATH,
+                Some(model_dir.path().to_str().unwrap()),
+                || {
+                    with_env(ENV_WHISPER_BIN, Some(whisper_bin.to_str().unwrap()), || {
+                        Config::resolve(CliInputs {
+                            input: input.path().to_path_buf(),
+                            out_dir: out_dir.path().to_path_buf(),
+                            model: None,
+                            keep_temp: true,
+                        })
+                    })
+                },
+            )
+        })
+        .expect("config should resolve");
+
+        assert!(cfg.keep_temp);
+    }
 }
