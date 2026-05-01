@@ -1,8 +1,9 @@
 //! Scribe CLI entry point.
 //!
 //! Top-level clap-derived CLI with `transcribe` and `doctor` subcommands.
-//! `doctor` is fully wired (issue #5); `transcribe` is still the v0.1
-//! stub awaiting issue #6.
+//! Both are now fully wired: `doctor` (issue #5) verifies the runtime,
+//! `transcribe` (issue #6) runs the ffmpeg → whisper.cpp → markdown +
+//! JSON pipeline.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -11,8 +12,13 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
 
+mod config;
 mod doctor;
+mod ffmpeg;
+mod output;
+mod pipeline;
 mod which;
+mod whisper;
 
 /// Verbatim audio-to-Markdown transcription CLI.
 ///
@@ -47,6 +53,10 @@ struct TranscribeArgs {
     /// Optional whisper.cpp model name (e.g. `large-v3`).
     #[arg(long, value_name = "NAME")]
     model: Option<String>,
+
+    /// Preserve the intermediate 16 kHz WAV. Useful for debugging.
+    #[arg(long)]
+    keep_temp: bool,
 }
 
 fn main() -> ExitCode {
@@ -82,8 +92,15 @@ fn init_tracing() {
         .init();
 }
 
-fn run_transcribe(_args: TranscribeArgs) -> Result<()> {
-    println!("scribe transcribe: not implemented");
+fn run_transcribe(args: TranscribeArgs) -> Result<()> {
+    let cli = config::CliInputs {
+        input: args.input,
+        out_dir: args.out_dir,
+        model: args.model,
+        keep_temp: args.keep_temp,
+    };
+    let md_path = pipeline::run(cli)?;
+    println!("{}", md_path.display());
     Ok(())
 }
 
