@@ -1,15 +1,18 @@
 //! Scribe CLI entry point.
 //!
-//! This is the v0.1 skeleton: clap-derived top-level CLI with `transcribe`
-//! and `doctor` subcommands. Both subcommands are stubs that print
-//! "not implemented" and exit 0. The real pipeline lands in issues #5
-//! (`doctor`) and #6 (`transcribe`).
+//! Top-level clap-derived CLI with `transcribe` and `doctor` subcommands.
+//! `doctor` is fully wired (issue #5); `transcribe` is still the v0.1
+//! stub awaiting issue #6.
 
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use tracing_subscriber::EnvFilter;
+
+mod doctor;
+mod which;
 
 /// Verbatim audio-to-Markdown transcription CLI.
 ///
@@ -46,14 +49,28 @@ struct TranscribeArgs {
     model: Option<String>,
 }
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
     init_tracing();
 
     let cli = Cli::parse();
 
-    match cli.command {
-        Command::Transcribe(args) => run_transcribe(args),
-        Command::Doctor => run_doctor(),
+    let result: Result<ExitCode> = match cli.command {
+        Command::Transcribe(args) => run_transcribe(args).map(|_| ExitCode::SUCCESS),
+        Command::Doctor => run_doctor().map(|healthy| {
+            if healthy {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::from(1)
+            }
+        }),
+    };
+
+    match result {
+        Ok(code) => code,
+        Err(e) => {
+            tracing::error!("{:#}", e);
+            ExitCode::from(1)
+        }
     }
 }
 
@@ -70,7 +87,6 @@ fn run_transcribe(_args: TranscribeArgs) -> Result<()> {
     Ok(())
 }
 
-fn run_doctor() -> Result<()> {
-    println!("scribe doctor: not implemented");
-    Ok(())
+fn run_doctor() -> Result<bool> {
+    doctor::run()
 }
