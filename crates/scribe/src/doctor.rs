@@ -230,6 +230,9 @@ mod tests {
 
     #[test]
     fn resolve_whisper_bin_prefers_env() {
+        let _g = crate::which::ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let key = ENV_WHISPER_BIN;
         let prev = std::env::var_os(key);
         std::env::set_var(key, "/custom/whisper-cli");
@@ -244,6 +247,9 @@ mod tests {
 
     #[test]
     fn resolve_whisper_bin_uses_default() {
+        let _g = crate::which::ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let key = ENV_WHISPER_BIN;
         let prev = std::env::var_os(key);
         std::env::remove_var(key);
@@ -259,6 +265,9 @@ mod tests {
 
     #[test]
     fn resolve_model_dir_prefers_env() {
+        let _g = crate::which::ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let key = ENV_MODEL_PATH;
         let prev = std::env::var_os(key);
         std::env::set_var(key, "/custom/models");
@@ -272,6 +281,9 @@ mod tests {
 
     #[test]
     fn resolve_model_dir_uses_default() {
+        let _g = crate::which::ENV_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let key = ENV_MODEL_PATH;
         let prev = std::env::var_os(key);
         std::env::remove_var(key);

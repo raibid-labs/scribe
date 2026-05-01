@@ -45,11 +45,9 @@ pub fn which_on_path(name: &str) -> Option<PathBuf> {
 /// The returned path is *not* validated — callers should follow up with
 /// [`is_executable_file`] (or run the binary) to confirm it actually works.
 ///
-/// Currently unused by `doctor` (which needs to combine env-var lookup with
-/// `dirs::home_dir()` and so handles its own resolution), but kept here for
-/// the `transcribe` pipeline (issue #6), which will resolve absolute paths
-/// to ffmpeg / whisper-cli the same way.
-#[allow(dead_code)]
+/// Used by [`crate::config`] to resolve the `whisper-cli` binary path
+/// when neither `$SCRIBE_WHISPER_BIN` is set nor the `doctor` resolution
+/// path is reused directly.
 pub fn env_or_default<P: Into<PathBuf>>(env_var: &str, default: P) -> PathBuf {
     match std::env::var_os(env_var) {
         Some(v) if !v.is_empty() => PathBuf::from(v),
@@ -105,14 +103,25 @@ fn first_nonempty_line(buf: &[u8]) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+/// Process-wide mutex for test code that mutates the environment.
+///
+/// `cargo test` runs tests in parallel by default. Any test that calls
+/// `std::env::set_var` or `remove_var` for one of the `SCRIBE_*` keys
+/// must hold this lock for the duration of the read so a sibling test
+/// doesn't yank the value out from under it.
+///
+/// This is `#[cfg(test)]` only — there's no reason production code would
+/// need to serialize env access.
+#[cfg(test)]
+pub static ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn env_or_default_prefers_env() {
-        // SAFETY: tests are single-threaded for env access by default; if we
-        // ever flip to multi-threaded test runners, swap this for a serial_test.
+        let _g = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let key = "SCRIBE_TEST_ENV_OR_DEFAULT_PREFERS_ENV";
         std::env::set_var(key, "/tmp/from-env");
         let p = env_or_default(key, "/tmp/default");
@@ -122,6 +131,7 @@ mod tests {
 
     #[test]
     fn env_or_default_falls_back_when_unset() {
+        let _g = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let key = "SCRIBE_TEST_ENV_OR_DEFAULT_FALLS_BACK_WHEN_UNSET";
         std::env::remove_var(key);
         let p = env_or_default(key, "/tmp/default");
@@ -130,6 +140,7 @@ mod tests {
 
     #[test]
     fn env_or_default_falls_back_when_empty() {
+        let _g = ENV_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let key = "SCRIBE_TEST_ENV_OR_DEFAULT_FALLS_BACK_WHEN_EMPTY";
         std::env::set_var(key, "");
         let p = env_or_default(key, "/tmp/default");
