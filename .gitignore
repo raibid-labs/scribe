@@ -26,3 +26,6 @@ logs/
 # Runtime
 *.sock
 *.pid
+
+# Claude Code agent worktrees
+.claude/
