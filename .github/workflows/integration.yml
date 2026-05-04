@@ -1,0 +1,120 @@
+name: Integration
+
+# Runs the heavy end-to-end integration test (`crates/scribe/tests/transcribe.rs`)
+# on a self-hosted runner that has ffmpeg + whisper-cli + a Whisper model
+# preinstalled. On the GitHub-hosted `ubuntu-latest` runners used by `ci.yml`,
+# that test self-skips because none of those dependencies are present, so this
+# workflow is what actually exercises the pipeline against real binaries.
+#
+# ---------------------------------------------------------------------------
+# SECURITY MODEL — read before editing.
+# ---------------------------------------------------------------------------
+# `raibid-labs/scribe` is a PUBLIC repository. GitHub's security hardening
+# guide explicitly warns that self-hosted runners on public repos must NOT
+# accept `pull_request` triggers from forks, because a forked PR can run
+# attacker-controlled code on the runner host:
+#
+#   https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#hardening-for-self-hosted-runners
+#
+# This workflow therefore triggers ONLY on:
+#   * `push` to `main` — post-merge, the code has already been reviewed and
+#     approved through the normal PR flow on `ubuntu-latest` runners.
+#   * `workflow_dispatch` — manual, gated by repo write access.
+#
+# Do NOT add a `pull_request` trigger here. If you need to test changes on
+# the self-hosted runner before merging, use `workflow_dispatch` against
+# your branch (which still requires repo write access).
+#
+# Additional hardening rules enforced below:
+#   * `permissions:` is `contents: read` only — no token write access.
+#   * No `${{ github.event.inputs.* }}` is interpolated into shell strings
+#     (manual dispatch carries no untrusted input here anyway).
+#   * `actions/checkout@v4` runs without a `ref:` argument, so it always
+#     checks out the post-merge SHA on `main` for `push`, or the dispatched
+#     ref for `workflow_dispatch`. We never check out a fork-controlled ref.
+#
+# Runner host hardening (dedicated user, isolated work dir, firewalling) is
+# documented in `docs/07-self-hosted-ci.md`.
+# ---------------------------------------------------------------------------
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/integration.yml'
+  workflow_dispatch:
+
+# Least-privilege: this workflow only needs to read the repo. No package
+# publishing, no PR commenting, no release writes.
+permissions:
+  contents: read
+
+# Cancel an in-flight integration run if a newer push to main lands. The
+# integration test is the slow path; queueing them up adds no value.
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  integration:
+    name: Integration (self-hosted)
+    # Required labels:
+    #   `self-hosted` — GitHub-imposed; identifies any self-hosted runner.
+    #   `Linux`       — built-in runner label for the OS.
+    #   `ARM64`       — built-in runner label for aarch64. The DGX Spark is
+    #                   aarch64; if/when we add an x86_64 runner we'd add a
+    #                   matrix entry with `X64` instead.
+    #   `scribe-integration` — custom label so this workflow only ever lands
+    #                          on a runner explicitly designated for it (i.e.
+    #                          one that has ffmpeg + whisper-cli + a model
+    #                          preinstalled and has been hardened per
+    #                          `docs/07-self-hosted-ci.md`).
+    runs-on: [self-hosted, Linux, ARM64, scribe-integration]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        # No `ref:` — we always run against whatever the trigger resolved to
+        # (post-merge `main` SHA for `push`, or the dispatched ref for
+        # `workflow_dispatch`). Never a fork-controlled ref.
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Show toolchain + dependency versions
+        run: |
+          rustc --version
+          cargo --version
+          ffmpeg -version | head -n 1 || echo "ffmpeg not on PATH (test will skip)"
+          ffprobe -version | head -n 1 || echo "ffprobe not on PATH (test will skip)"
+          if [ -n "${SCRIBE_WHISPER_BIN:-}" ]; then
+            echo "SCRIBE_WHISPER_BIN=${SCRIBE_WHISPER_BIN}"
+          fi
+          if [ -n "${SCRIBE_MODEL_PATH:-}" ]; then
+            echo "SCRIBE_MODEL_PATH=${SCRIBE_MODEL_PATH}"
+          fi
+
+      # Run the end-to-end integration test explicitly first, with
+      # `--nocapture` so any skip reason (or real pipeline output) shows up
+      # in the workflow log. The test is designed to skip cleanly if any
+      # dependency is missing — on a properly provisioned runner none of
+      # those skips fire and the test exercises the real ffmpeg + whisper.cpp
+      # pipeline.
+      - name: Run end-to-end integration test
+        run: cargo test --test transcribe -- --nocapture
+
+      # Full suite for regression sanity. The unit tests are cheap and
+      # already pass on `ubuntu-latest`; running them here too means a
+      # toolchain/dependency drift on the runner host can't sneak past us.
+      - name: Run full test suite
+        run: cargo test --all
