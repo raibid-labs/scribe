@@ -21,6 +21,10 @@ This directory holds Scribe's design and reference docs.
 - [`06-troubleshooting.md`](./06-troubleshooting.md) — common failure
   modes (missing ffmpeg / whisper-cli / model, CUDA absence, whisper
   hallucinations on silence)
+- [`07-self-hosted-ci.md`](./07-self-hosted-ci.md) — self-hosted GitHub
+  Actions runner pattern for the end-to-end integration test, security
+  model (no fork PRs, push-to-main only), runner registration, host
+  hardening, and removal
 
 ## Pointers
 

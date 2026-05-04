@@ -58,6 +58,9 @@ scribe transcribe --input podcast.mp3 --out-dir ~/transcripts
   setup, code style, PR conventions, how to extend inputs and outputs
 - [`docs/06-troubleshooting.md`](./docs/06-troubleshooting.md) — common
   failure modes and fixes
+- [`docs/07-self-hosted-ci.md`](./docs/07-self-hosted-ci.md) — self-hosted
+  GitHub Actions runner for the end-to-end integration test, security
+  model, host hardening
 
 ## Related raibid-labs projects
 
